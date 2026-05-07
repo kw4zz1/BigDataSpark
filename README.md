@@ -1,3 +1,85 @@
+# BigDataSpark — Лабораторная работа №2
+
+Выполнил: **Шиширин Владислав Николаевич**, группа **М8О-310Б-23**
+
+## Как запустить
+
+### Требования
+- Docker и Docker Compose
+
+### 1. Скачать JAR-файлы для Spark (один раз)
+```bash
+mkdir -p spark-jars && cd spark-jars
+curl -LO https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.1/postgresql-42.7.1.jar
+curl -LO https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc/0.8.3/clickhouse-jdbc-0.8.3-all.jar
+curl -LO https://repo1.maven.org/maven2/org/mongodb/spark/mongo-spark-connector_2.12/10.3.0/mongo-spark-connector_2.12-10.3.0.jar
+curl -LO https://repo1.maven.org/maven2/org/mongodb/mongodb-driver-sync/4.8.2/mongodb-driver-sync-4.8.2.jar
+curl -LO https://repo1.maven.org/maven2/org/mongodb/mongodb-driver-core/4.8.2/mongodb-driver-core-4.8.2.jar
+curl -LO https://repo1.maven.org/maven2/org/mongodb/bson/4.8.2/bson-4.8.2.jar
+curl -LO https://repo1.maven.org/maven2/org/mongodb/bson-record-codec/4.8.2/bson-record-codec-4.8.2.jar
+cd ..
+```
+
+### 2. Запустить контейнеры
+```bash
+docker compose up -d
+```
+PostgreSQL автоматически создаст схему и загрузит 10 000 строк из 10 CSV-файлов.
+
+### 3. Скопировать MongoDB JAR в worker (один раз)
+```bash
+for jar in mongo-spark-connector_2.12-10.3.0.jar mongodb-driver-sync-4.8.2.jar mongodb-driver-core-4.8.2.jar bson-4.8.2.jar bson-record-codec-4.8.2.jar; do
+  docker exec -u root bigdata_spark_worker cp /opt/spark-jars/$jar /opt/spark/jars/
+done
+```
+
+### 4. ETL: модель «Звезда» в PostgreSQL
+```bash
+docker exec bigdata_spark_master /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --jars /opt/spark-jars/postgresql-42.7.1.jar \
+  /opt/spark-jobs/etl_to_star_schema.py
+```
+
+### 5. Отчёты в ClickHouse
+```bash
+docker exec bigdata_spark_master /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --jars /opt/spark-jars/postgresql-42.7.1.jar,/opt/spark-jars/clickhouse-jdbc-0.8.3-all.jar \
+  /opt/spark-jobs/etl_to_clickhouse.py
+```
+
+### 6. Отчёты в MongoDB
+```bash
+docker exec bigdata_spark_master /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --jars /opt/spark-jars/postgresql-42.7.1.jar,/opt/spark-jars/mongo-spark-connector_2.12-10.3.0.jar,/opt/spark-jars/mongodb-driver-sync-4.8.2.jar,/opt/spark-jars/mongodb-driver-core-4.8.2.jar,/opt/spark-jars/bson-4.8.2.jar,/opt/spark-jars/bson-record-codec-4.8.2.jar \
+  /opt/spark-jobs/etl_to_mongodb.py
+```
+
+### 7. Проверка отчётов
+
+**PostgreSQL** — подключиться в DBeaver: `localhost:5433`, user `postgres`, password `postgres`, db `bigdata`.
+
+**ClickHouse** — подключиться в DBeaver: `localhost:8123`, user `clickhouse`, password `clickhouse`, db `bigdata`:
+```sql
+SELECT * FROM report_products   LIMIT 10;
+SELECT * FROM report_customers  LIMIT 10;
+SELECT * FROM report_time       ORDER BY year, month;
+SELECT * FROM report_stores     LIMIT 5;
+SELECT * FROM report_suppliers  LIMIT 5;
+SELECT * FROM report_quality    LIMIT 10;
+```
+
+**MongoDB** — подключиться в Compass: `mongodb://mongo:mongo@localhost:27017/bigdata?authSource=admin`, коллекции: `report_products`, `report_customers`, `report_time`, `report_stores`, `report_suppliers`, `report_quality`.
+
+### 8. Остановка
+```bash
+docker compose down
+```
+
+---
+
 # BigDataSpark
 
 Анализ больших данных - лабораторная работа №2 - ETL реализованный с помощью Spark
